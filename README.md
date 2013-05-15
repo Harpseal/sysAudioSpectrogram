@@ -11,11 +11,11 @@ Replace highgui with LayeredWindowD2D
 ```
 
 ## Buliding Prerequisites & Dependencies
-* Microsoft Visual Studio 2012 Express
-* OpenCV 
-	** (In this project, I only use the highgui to create window and show some FFT results. Highgui will be replace with LayeredWindowD2D(Windows API) in the future.)
-* KissFFT
-* FFTW (Optional)
+- Microsoft Visual Studio 2012 Express
+- OpenCV 
+	- (In this project, I only use the highgui to create window and show some FFT results. Highgui will be replace with LayeredWindowD2D(Windows API) in the future.)
+- KissFFT
+- FFTW (Optional)
 
 ## Authors
 
