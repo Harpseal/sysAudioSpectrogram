@@ -13,7 +13,7 @@
 #define FIXED_POINT 16
 #include ".\KissFFT\kiss_fftr.h"
 #endif
-//#define EnableDB
+#define EnableDB
 
 #include "AudioSpectrogramDebug.cpp"
 
@@ -56,10 +56,88 @@ public:
 	virtual const char* GetFFTName() = 0;
 
 	virtual void UpdateSpectrogram(IplImage*pImg,int* pFrqRemap,bool bIsShiftingSpectrogram = true);
+	virtual void UpdateSpectrogramFreq(IplImage*pImg,int nSampleRate,int rectX,int rectY,int rectW,int rectH,float fFreqStart,float fFreqRange,float fdBHigh,float fdBLow);
+
+	inline float Mag2dB(float mag){return (20*log10(mag));}
 };
+
+
+void AudioFFT::UpdateSpectrogramFreq(IplImage*pImg,int nSampleRate,int rectX,int rectY,int rectW,int rectH,float fFreqStart,float fFreqRange,float fdBHigh,float fdBLow)
+{
+	const int ciStringMinPx = 50;
+	float fFreqGap = ((float)nSampleRate)/m_nFFT;
+	int iMag[2];
+	iMag[0] = floor(fFreqStart/fFreqGap);
+	iMag[1] = ceil((fFreqStart+fFreqRange)/fFreqGap);
+	if (iMag[0]<0) iMag[0] = 0;
+	if (iMag[1]>=m_nFFT/2+1) iMag[1] = m_nFFT/2;
+	
+	if (rectX+rectW>pImg->width) rectX = pImg->width-rectW;
+	if (rectX<0)
+	{
+		rectX = 0;
+		rectW = pImg->width;
+	}
+
+	if (rectY+rectH>pImg->height) rectY = pImg->height-rectH;
+	if (rectY<0)
+	{
+		rectY = 0;
+		rectH = pImg->height;
+	}
+
+	float fPx2Freq = (fFreqGap*(iMag[1]-iMag[0]+1))/rectW;
+
+	float fBaseLineGapFreq = ceil((ciStringMinPx*fPx2Freq)/100.f)*100.f;
+	float fBaseLineStartFreq = (ceil(iMag[0]*fFreqGap/100.f)*100.f-iMag[0]*fFreqGap);
+
+	float fBaseLineGapPx = fBaseLineGapFreq/fPx2Freq;
+	float fBaseLineStartPx = fBaseLineStartFreq/fPx2Freq;
+
+	cvSetZero(pImg);
+	char buffer[64];
+	float f,w;
+	for (w=fBaseLineStartPx,f=fBaseLineStartFreq;w<rectW;w+=fBaseLineGapPx,f+=fBaseLineGapFreq)
+	{
+		cvLine(pImg,cvPoint(rectX+w,rectY),cvPoint(rectX+w,rectY+rectH),CV_RGB(128,128,128));
+		sprintf_s(buffer,64,"%.0f",f);
+		cvPutText(pImg,buffer,cvPoint(w,rectY+rectH+20),&cvFont(1,1),CV_RGB(255,255,255));
+		//printf("%s[%.2f] ",buffer,f);
+	}
+	//printf("\n");
+
+
+	float fMagGap = ((float)rectW)/(iMag[1]-iMag[0]+1);
+	float fV,fVPre,fVBase;
+	fVBase = GetFFTOutputMagnitude(0);
+	fVPre = Mag2dB(GetFFTOutputMagnitude(iMag[0]));
+	
+	for (int i=iMag[0]+1,c=1;i<=iMag[1];i++,c++)
+	{
+		fV = Mag2dB(GetFFTOutputMagnitude(i));
+		cvLine(pImg,cvPoint(rectX+(c-1)*fMagGap,rectY+((fVPre-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+c*fMagGap,rectY+(fV-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(0,255,0));
+		fVPre = fV;
+	}
+	
+	cvNamedWindow("Debug");
+	cvShowImage("Debug",pImg);
+	
+
+}
 
 void AudioFFT::UpdateSpectrogram(IplImage*pImg,int* pFrqRemap,bool bIsShiftingSpectrogram)
 {
+	const float cfColor[][3] = 
+	{
+		{0,0,0},
+		{0,0,1},
+		{0,1,0},
+		{1,0,0},
+		{1,0,1},
+		{0,1,1},
+		{1,1,0},
+		{1,1,1}
+	};
 	int i,n;
 	float v,vMax,vMin;
 	vMax = 0;vMin=99999999;
@@ -70,9 +148,7 @@ void AudioFFT::UpdateSpectrogram(IplImage*pImg,int* pFrqRemap,bool bIsShiftingSp
 		v = GetFFTOutputMagnitude(i);
 		//v = abs(fft_out[i][0]);
 #ifdef EnableDB
-		if (v==0)
-			v =0.0001;
-		v = (20*log10(v));
+		v = Mag2dB(v);
 #endif
 
 		//printf("%.4f%s", v, 
@@ -86,8 +162,11 @@ void AudioFFT::UpdateSpectrogram(IplImage*pImg,int* pFrqRemap,bool bIsShiftingSp
 	m_fFrqMaxCur = vMax;
 	if (m_fFrqMax<vMax)
 		m_fFrqMax = vMax;
-
+#ifdef EnableDB
+	if (m_fFrqMaxCur<-80|| m_fRawMaxCur<0.00001)
+#else
 	if (m_fFrqMaxCur<0.00001 || m_fRawMaxCur<0.00001)
+#endif
 	{
 		if (!bIsShiftingSpectrogram)
 		{
@@ -104,7 +183,7 @@ void AudioFFT::UpdateSpectrogram(IplImage*pImg,int* pFrqRemap,bool bIsShiftingSp
 	//else
 	//	m_FFTW.fFrqMax = m_FFTW.fFrqMax*0.5+ vMax*0.5;
 #ifdef EnableDB
-	vMin = 0;
+	vMin = -40;
 #endif
 	unsigned char* pImgData;
 	pImgData = (unsigned char*)pImg->imageData + m_iFrqImgCounter*pImg->widthStep;
@@ -134,19 +213,31 @@ void AudioFFT::UpdateSpectrogram(IplImage*pImg,int* pFrqRemap,bool bIsShiftingSp
 			pImgData = (unsigned char*)pImg->imageData + ((pImg->height-1-y)*pImg->width+updateXPos)*pImg->nChannels;
 			v = scaleColorSum/scaleCount;
 #ifdef EnableDB
-			//if (v==0)
-			//	v =0.0001;
-			vMin = -70;
-			v = (20*log10(v));
+			v = Mag2dB(v);
 			//if (v<-70) v=0;
 			//else if (v>=0) v=0;
 			//else
 			//	v = (70.f+v)/(70)*254.0;
-			v=(MIN((v-vMin)/(m_fFrqMax-vMin),1))*254.0;
+			if (v<=vMin) v = 0;
+			else
+				v=(MIN((v-vMin)/(m_fFrqMax-vMin),1))*254.f;
 #else
-			v=(MIN((v-vMin)/(m_fFrqMax*0.4-vMin),1))*254.0;//*(m_FFTW.fRawMaxCur/MAX(m_FFTW.fRawMax,0.1));
+			v=(MIN((v-vMin)/(m_fFrqMax*0.4-vMin),1))*254.f;//*(m_FFTW.fRawMaxCur/MAX(m_FFTW.fRawMax,0.1));
 #endif
-			
+			//int color = ceil(v*7);
+			//if (color < 1)
+			//	pImgData[0] = pImgData[1] = pImgData[2] = 0;
+			//else if (color>7)
+			//	pImgData[0] = pImgData[1] = pImgData[2] = 1;
+			//else
+			//{
+			//	float weight[2];
+			//	weight[0] = (v-float(color-1));
+			//	weight[1] = ((float(color)-v));
+			//	pImgData[0] = (cfColor[color-1][2]*weight[0]+cfColor[color][2]*weight[1])*254.f;
+			//	pImgData[1] = (cfColor[color-1][1]*weight[0]+cfColor[color][1]*weight[1])*254.f;
+			//	pImgData[2] = (cfColor[color-1][0]*weight[0]+cfColor[color][0]*weight[1])*254.f;
+			//}
 
 
 			pImgData[0] = pImgData[1] = pImgData[2] = v;
@@ -768,7 +859,7 @@ AudioSpectrogram::AudioSpectrogram(int nFFT,AudioBuffer *pBuffer,int width,int h
 #endif
 
 	m_iFrqImgCounter = 0;
-	m_fOverlapRatio = 0.04;
+	m_fOverlapRatio = 0.1;
 	m_piFrqRemap = NULL;
 	m_pRawDataBuffer.p64 = NULL;
 	m_bIsShiftingSpectrogram = true;
@@ -904,9 +995,10 @@ DWORD WINAPI AudioSpectrogram::AudioSpectrogramThreadFunction(LPVOID pContext)
 
 			//if (pSpec->m_vFFT[i].pFFT->m_fRawMaxCur<0.00001)
 				//pSpec->m_pBuffer->ClearNewData();
-			if (key == ' ')
-				pSpec->m_vFFT[i].pFFT->ShowDebugInfo();
+			//if (key == ' ')
+				//pSpec->m_vFFT[i].pFFT->ShowDebugInfo();
 			pSpec->m_vFFT[i].pFFT->UpdateSpectrogram(pSpec->m_vFFT[i].pFrqImg,pSpec->m_piFrqRemap);
+			//pSpec->m_vFFT[i].pFFT->UpdateSpectrogram(pSpec->m_vFFT[i].pFrqImg,pSpec->m_pBuffer->m_nSamplesPerSec,30,30,pSpec->m_vFFT[i].pFrqImg->width-60,pSpec->m_vFFT[i].pFrqImg->height-60,0,3000,40,-40);
 
 		}
 

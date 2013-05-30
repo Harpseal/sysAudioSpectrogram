@@ -479,7 +479,7 @@ HRESULT LoopbackCapture::Process()
             default:
                 break;
         }
-		pBuffer->SetAudioInfo(pwfx->nBlockAlign,pwfx->nChannels,pwfx->wBitsPerSample,isFloat);
+		pBuffer->SetAudioInfo(pwfx->nSamplesPerSec,pwfx->nBlockAlign,pwfx->nChannels,pwfx->wBitsPerSample,isFloat);
 	}
 
     if (FAILED(hr)) {

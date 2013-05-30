@@ -12,7 +12,7 @@ AudioBuffer::AudioBuffer(int defaultOutputMaxSize)
 	m_nBufferNewData = 0;
 	m_nBufferExtraCapacity = 4;
 
-	m_nBlockAlign = m_nChannels = m_nBitsPerSample = 0;
+	m_nSamplesPerSec = m_nBlockAlign = m_nChannels = m_nBitsPerSample = 0;
 	m_bIsFloat = m_bIsSetAudioInfo = false;
 
 	EnsureCapacity(defaultOutputMaxSize);
@@ -28,7 +28,7 @@ AudioBuffer::AudioBuffer()
 	m_nBufferNewData = 0;
 	m_nBufferExtraCapacity = 4;
 
-	m_nBlockAlign = m_nChannels = m_nBitsPerSample = 0;
+	m_nSamplesPerSec = m_nBlockAlign = m_nChannels = m_nBitsPerSample = 0;
 	m_bIsFloat = m_bIsSetAudioInfo = false;
 }
 
@@ -187,8 +187,9 @@ void AudioBuffer::ClearNewData()
 	ReleaseMutex(m_hDataMutex);
 }
 
-void AudioBuffer::SetAudioInfo(int nBlockAlign,int nChannels,int nBitsPerSample,bool isFloat)
+void AudioBuffer::SetAudioInfo(int nSamplesPerSec,int nBlockAlign,int nChannels,int nBitsPerSample,bool isFloat)
 {
+	m_nSamplesPerSec = nSamplesPerSec;
 	m_nBlockAlign = nBlockAlign;
 	m_nChannels = nChannels;
 	m_nBitsPerSample = nBitsPerSample;

@@ -100,6 +100,11 @@
     <ClInclude Include="AudioDeviceNotificationClient.h" />
     <ClInclude Include="KissFFT\kiss_fft.h" />
     <ClInclude Include="KissFFT\kiss_fftr.h" />
+    <ClInclude Include="LayeredWindow\LayeredWindowD2DtoDXGI.h" />
+    <ClInclude Include="LayeredWindow\LayeredWindowD2DtoGDI.h" />
+    <ClInclude Include="LayeredWindow\LayeredWindowD2DtoWIC.h" />
+    <ClInclude Include="LayeredWindow\LayeredWindowGDI.h" />
+    <ClInclude Include="LayeredWindow\LayeredWindowInfo.h" />
     <ClInclude Include="loopback-capture\loopback-capture.h" />
     <ClInclude Include="AudioBuffer.h" />
     <ClInclude Include="ThreadBase.h" />

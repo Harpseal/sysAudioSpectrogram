@@ -19,9 +19,10 @@ public:
 	int GetCapacity();
 	void ClearNewData();
 
-	void SetAudioInfo(int nBlockAlign,int nChannels,int nBitsPerSample,bool isFloat = false);
+	void SetAudioInfo(int nSamplesPerSec,int nBlockAlign,int nChannels,int nBitsPerSample,bool isFloat = false);
 	
 	//Audio Info
+	int m_nSamplesPerSec;
 	int m_nBlockAlign;
 	int m_nChannels;
 	int m_nBitsPerSample;
