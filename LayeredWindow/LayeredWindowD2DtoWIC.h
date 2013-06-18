@@ -44,7 +44,7 @@ public:
 	HRESULT BeginDraw()
 	{
 		HRESULT hr = S_OK;
-		CreateDeviceResources();
+		hr = CreateDeviceResources();
 		m_pRenderTarget->BeginDraw();
 		return hr;
 	}
@@ -53,6 +53,7 @@ public:
 	{
 		HRESULT hr = S_OK;
 		hr = m_pRenderTarget->EndDraw();
+		assert(hr>=0);
 
 		if (D2DERR_RECREATE_TARGET == hr) {
 			DiscardDeviceResources();
@@ -67,7 +68,11 @@ public:
 		HDC hdc;
 		hr = m_pGdiInteropRenderTarget->GetDC(
 			D2D1_DC_INITIALIZE_MODE_COPY,
+			//D2D1_DC_INITIALIZE_MODE_CLEAR,
 			&hdc);
+		//if (hr<0)printf("GetDC Error  0x%X\n",hr);
+		//else
+		//	printf("GetDC Success!!!\n");
 		assert(hr>=0);
 		return hdc;
 	}
@@ -119,6 +124,7 @@ private:
 			IID_IWICImagingFactory,
 			(LPVOID*)&m_pWICFactory
 			);
+		S_OK;
 		assert(hr>=0);
 
 		hr = m_pWICFactory->CreateBitmap(

@@ -5,6 +5,7 @@
 #include "LayeredWindowGDI.h"
 
 #include <WinDef.h>
+#include <tchar.h>
 
 LayeredWindowBase::LayeredWindowBase(int width,int height,LayeredWindowTechType techType):m_info(width,height)
 {
@@ -25,6 +26,11 @@ LayeredWindowBase::~LayeredWindowBase()
 
 }
 
+bool LayeredWindowBase::CheckWindowState()
+{
+	return m_hThreadMsg != NULL && WaitForSingleObject(m_hThreadMsg, 0) == WAIT_TIMEOUT;
+}
+
 void LayeredWindowBase::Render()
 {
 	wchar_t pszbuf[] = L"1.Text Designer中文字也可顯示\n2.Text Designer中文字也可顯示\n3.Text Designer中文字也可顯示\n4.Text Designer中文字也可顯示\n5.Text Designer中文字也可顯示\n6.Text Designer中文字也可顯示 Text Designer中文字也可顯示\n7.Text Designer中文字也可顯示\n8.Text Designer中文字也可顯示\n9.Text Designer中文字也可顯示\n10.Text Designer中文字也可顯示";
@@ -32,7 +38,7 @@ void LayeredWindowBase::Render()
 
 	if (m_techType & LayeredWindow_TechType_D2D)
 	{
-		m_pWin.pD2D->BeginDraw();
+		//m_pWin.pD2D->BeginDraw();
 		m_pWin.pD2D->m_pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::White,0.5));
 		//m_pWin.pD2D->m_pRenderTarget->DrawText(pszbuf,nStrLen,
 		//
@@ -64,11 +70,11 @@ void LayeredWindowBase::Render()
 		//	),
 		//	m_spBlackBrush
 		//	);)
-		m_pWin.pD2D->EndDraw();
+		//m_pWin.pD2D->EndDraw();
 	}
 	else if (m_techType & LayeredWindow_TechType_GDI)
 	{
-		m_pWin.pGDI->BeginDraw();
+		//m_pWin.pGDI->BeginDraw();
 		//Gdiplus::Graphics graphics( m_pBitmap->GetDC() ); //#MOD
 		m_pWin.pGDI->m_pGraphics->Clear( Gdiplus::Color( 128, 255, 255, 255 ) );
 
@@ -96,7 +102,7 @@ void LayeredWindowBase::Render()
 		m_pWin.pGDI->m_pGraphics->FillPath(&brush, &path);
 
 		//SelectObject(m_bitmap.m_hdc, m_bitmap.m_bitmap);
-		m_pWin.pGDI->EndDraw();
+		//m_pWin.pGDI->EndDraw();
 	}
 
 }
@@ -111,11 +117,32 @@ bool LayeredWindowBase::SetSize(int w,int h)
 	return true;
 }
 
+void LayeredWindowBase::UpdateLayeredWindow()
+{
+	BeforeRender();
+	m_pWin.pAPI->BeginDraw();
+	Render();
+	if (m_techType == LayeredWindow_TechType_D2DtoGDI)
+	{
+		m_pWin.pAPI->EndDraw();
+		m_info.Update(m_hWnd,m_pWin.pAPI->GetDC());
+		m_pWin.pAPI->ReleaseDC();
+		
+	}
+	else
+	{
+		m_info.Update(m_hWnd,m_pWin.pAPI->GetDC());
+		m_pWin.pAPI->ReleaseDC();
+		m_pWin.pAPI->EndDraw();
+	}
+	AfterRender();
+}
+
 LRESULT CALLBACK LayeredWindowBase::WndProcStatic(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	LayeredWindowBase* pParent;
 	// Get pointer to window
-	if(uMsg == WM_CREATE)
+	if(uMsg == WM_CREATE)// || uMsg == WM_NCCREATE)
 	{
 		pParent = (LayeredWindowBase*)((LPCREATESTRUCT)lParam)->lpCreateParams;
 		SetWindowLongPtr(hWnd,GWL_USERDATA,(LONG_PTR)pParent);
@@ -126,7 +153,7 @@ LRESULT CALLBACK LayeredWindowBase::WndProcStatic(HWND hWnd, UINT uMsg, WPARAM w
 		if(!pParent) return DefWindowProc(hWnd,uMsg,wParam,lParam);
 	}
 
-	printf("WndProcStatic : %X\n",uMsg);
+	//printf("WndProcStatic : %X\n",uMsg);
 	return pParent->WndProc(pParent->m_hWnd,uMsg,wParam,lParam);
 }
 
@@ -134,6 +161,13 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 {
 	switch(uMsg)
 	{
+	case WM_CREATE:
+		//SetTimer(hWnd,1,100,NULL);
+		if (Initialize())
+			return NULL;
+		else
+			return -1;
+
 	case WM_SIZE:
 		{
 			UINT width = LOWORD(lParam);
@@ -182,13 +216,18 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 		return 0;
 
 	case WM_ACTIVATE:
+		UpdateLayeredWindow();
 		if (hWnd == m_hWnd)
 		{
-			Render();
-			if (m_techType & LayeredWindow_TechType_D2D)
-				m_info.Update(m_hWnd,m_pWin.pD2D->GetDC());
-			else if (m_techType & LayeredWindow_TechType_GDI)
-				m_info.Update(m_hWnd,m_pWin.pGDI->GetDC());
+			
+			
+				//BeforeRender();
+				//m_pWin.pAPI->BeginDraw();
+				//Render();
+				//m_info.Update(m_hWnd,m_pWin.pAPI->GetDC());
+				//m_pWin.pAPI->ReleaseDC();
+				//m_pWin.pAPI->EndDraw();
+				//AfterRender();
 		}
 		break;
 
@@ -211,8 +250,13 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 			//else
 			if (hWnd == m_hWnd)
 			{
+				BeforeRender();
+				m_pWin.pAPI->BeginDraw();
 				Render();
 				m_info.Update(m_hWnd,m_pWin.pAPI->GetDC());
+				m_pWin.pAPI->ReleaseDC();
+				m_pWin.pAPI->EndDraw();
+				AfterRender();
 			}
 
 
@@ -221,21 +265,24 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 
 	case WM_DESTROY:
 		{
+			Uninitialize();
 			PostQuitMessage(0);
 		}
 		return 0;
 	case WM_COMMAND:
 		break;
 	case WM_KEYDOWN:
-		printf("%X key down\n",wParam);
+		//printf("%X key down\n",wParam);
+		OnKeyboard(wParam,true);
 		break;
 
 	case WM_KEYUP:
-		printf("%X key up\n",wParam);
+		//printf("%X key up\n",wParam);
+		OnKeyboard(wParam,false);
 		break;
 
+	case WM_MOUSEWHEEL:
 	case WM_MOUSEMOVE:
-		break;
 	case WM_LBUTTONDOWN:
 	case WM_LBUTTONUP:
 	case WM_LBUTTONDBLCLK:
@@ -246,15 +293,16 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 	case WM_MBUTTONUP:
 	case WM_MBUTTONDBLCLK:
 		{
+			
 			int x=(short)LOWORD(lParam);
 			int y=(short)HIWORD(lParam);
-			printf("mouse event : %x @ (%d,%d)\n",uMsg,x,y);
+			OnMouse(uMsg,x,y,GET_KEYSTATE_WPARAM(wParam),GET_WHEEL_DELTA_WPARAM(wParam));
+			//printf("mouse event : %x @ (%d,%d)\n",uMsg,x,y);
 		}
 		
 		break;
 
 	case WM_NCMOUSEMOVE     :
-		break;
 	case WM_NCLBUTTONDOWN   :
 	case WM_NCLBUTTONUP     :
 	case WM_NCLBUTTONDBLCLK :
@@ -267,7 +315,8 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 		{
 			int x=(short)LOWORD(lParam);
 			int y=(short)HIWORD(lParam);
-			printf("NCmouse event : %x @ (%d,%d)\n",uMsg,x,y);
+			OnMouse(uMsg,x,y,0,0);
+			//printf("NCmouse event : %x @ (%d,%d)\n",uMsg,x,y);
 		}
 
 		break;
@@ -288,6 +337,7 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 			#define BF_RIGHT        0x0004
 			#define BF_BOTTOM       0x0008
 			*/
+			
 			int x=(short)LOWORD(lParam);
 			int y=(short)HIWORD(lParam);
 			unsigned char type = 0;
@@ -299,7 +349,7 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 				type|=BF_RIGHT;
 			if (m_info.m_windowPosition.y+m_info.m_size.cy-y<m_info.m_border)
 				type|=BF_BOTTOM;
-			printf("WM_NCHITTEST (%d,%d): pos (%d,%d)  size (%d,%d)  border %d\n",x,y,m_info.m_windowPosition.x,m_info.m_windowPosition.y,m_info.m_size.cx,m_info.m_size.cy,m_info.m_border);
+			//printf("WM_NCHITTEST (%d,%d): pos (%d,%d)  size (%d,%d)  border %d\n",x,y,m_info.m_windowPosition.x,m_info.m_windowPosition.y,m_info.m_size.cx,m_info.m_size.cy,m_info.m_border);
 
 			switch (type)
 			{
@@ -364,8 +414,16 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 				m_info.m_windowPosition.x = pRect->left;
 				m_info.m_windowPosition.y = pRect->top;
 				printf("WM_SIZING : %d %d -> %d %d\n",width,height,m_pWin.pAPI->GetWidth(),m_pWin.pAPI->GetHeight());
-				Render();
-				m_info.Update(m_hWnd,m_pWin.pAPI->GetDC());
+				//Render();
+//				m_info.Update(m_hWnd,m_pWin.pAPI->GetDC());
+				//m_pWin.pAPI->ReleaseDC();
+
+				UpdateLayeredWindow();
+				//m_pWin.pAPI->BeginDraw();
+				//Render();
+				//m_info.Update(m_hWnd,m_pWin.pAPI->GetDC());
+				//m_pWin.pAPI->ReleaseDC();
+				//m_pWin.pAPI->EndDraw();
 				//RedrawWindow(m_hWnd, NULL, NULL, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE);
 			}
 			
@@ -385,6 +443,11 @@ DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 	LayeredWindowBase* pWindow = reinterpret_cast<LayeredWindowBase*>(pParam );
 	if ( !pWindow )
 		return (DWORD)-1;
+	HRESULT hr = S_OK;
+	hr = CoInitialize(NULL);
+
+	if (!SUCCEEDED(hr))
+		return 0;
 
 
 	switch (pWindow->m_techType)
@@ -392,6 +455,8 @@ DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 	case LayeredWindow_TechType_GDI:
 		pWindow->m_pWin.pGDI = new LayeredWindowGDI(pWindow->m_info.m_size.cx, pWindow->m_info.m_size.cy);
 		break;
+	case LayeredWindow_TechType_D2D:
+		pWindow->m_techType = LayeredWindow_TechType_D2DtoDXGI;
 	case LayeredWindow_TechType_D2DtoDXGI:
 		pWindow->m_pWin.pD2DtoDXGI = new LayeredWindowD2DtoDXGI(pWindow->m_info.m_size.cx, pWindow->m_info.m_size.cy);
 		break;
@@ -432,6 +497,8 @@ DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 
 	//InitDraw
 	ShowWindow(pWindow->m_hWnd,SW_SHOW);
+	//RedrawWindow(pWindow->m_hWnd, NULL, NULL, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN) ;
+	//RedrawWindow(pWindow->m_hWnd, NULL, NULL, RDW_INVALIDATE) ;
 
 	//Msg Loop
 	MSG msg = { 0 };
@@ -463,6 +530,7 @@ DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 		pWindow->m_pWin.pAPI = NULL;
 		break;
 	}
+	CoUninitialize();
 
 	printf("LayeredWindowBase thread closed.\n");
 	return 0;

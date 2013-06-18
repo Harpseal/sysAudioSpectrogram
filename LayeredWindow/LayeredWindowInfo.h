@@ -1,11 +1,12 @@
 #ifndef LAYEREDWINDOWINFO_H_
 #define LAYEREDWINDOWINFO_H_
 
-#include <atlbase.h>
-#include <atlwin.h>
+//#include <atlbase.h>
+//#include <atlwin.h>
 #include <Windows.h>
 #include <assert.h>
 #include <vector>
+#include <tchar.h>
 
 template <class T> inline void SafeRelease(T **ppT)
 {
@@ -56,6 +57,11 @@ public:
 	void Update(
 		__in HWND hwnd,
 		__in HDC hdc) {
+
+			if (hdc == 0)
+			{
+				printf("LayeredWindowInfo::Update Error: hdc == 0\n");
+			}
 
 			m_info.hdcSrc = hdc;
 

@@ -1,7 +1,6 @@
 #ifndef AudioSpectrogram_H_
 #define AudioSpectrogram_H_
 
-
 #include <vector>
 #include "AudioBuffer.h"
 #include "ThreadBase.h"
@@ -12,6 +11,7 @@
 struct _IplImage;
 typedef struct _IplImage IplImage;
 class AudioFFT;
+class AudioSpectrogramWindow;
 
 struct AudioFFTPackage
 {
@@ -39,6 +39,8 @@ private:
 	int m_iFrqImgCounter;
 	float m_fOverlapRatio;
 
+	float *m_pfFFT2Pitch;
+	void GenFFT2Pitch(int nFFT,int nSamplePerSec);
 	int* m_piFrqRemap;
 	bool m_bIsShiftingSpectrogram;
 	
@@ -48,6 +50,8 @@ private:
 		BYTE *p8;
 		INT64 *p64;
 	} m_pRawDataBuffer;
+
+	AudioSpectrogramWindow *m_pFFTWindow;
 	
 };
 

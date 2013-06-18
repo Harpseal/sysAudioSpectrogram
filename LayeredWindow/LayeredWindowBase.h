@@ -27,9 +27,20 @@ public:
 	static LRESULT CALLBACK WndProcStatic( HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam );
 	LRESULT WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-	virtual void Render();
+	virtual bool Initialize(){return true;}
+	virtual void Uninitialize(){}
 
-protected:
+	virtual void BeforeRender(){}
+	virtual void Render();
+	virtual void AfterRender(){}
+	virtual bool SetSize(int w,int h);
+
+	virtual void OnMouse(UINT msg,int x,int y,UINT vkey,short wheel){}
+	virtual void OnKeyboard(int key,bool isKeyDown){}
+
+	bool CheckWindowState();
+
+//protected:
 	LayeredWindowTechType m_techType;
 	LayeredWindowInfo m_info;
 	HWND m_hWnd;
@@ -51,8 +62,8 @@ protected:
 	}m_pWin;
 
 	static DWORD WINAPI StartMsgThread(void* pParam);
-	bool SetSize(int w,int h);
-	
+	void UpdateLayeredWindow();
+
 };
 
 #endif

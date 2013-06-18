@@ -3,6 +3,8 @@
 
 #include <assert.h>
 #include "iCV.h"
+#include <math.h>
+#include <cmath>
 
 #if ENABLE_FFTW
 #include "fftw3.h"
@@ -10,12 +12,17 @@
 
 #if ENABLE_KISSFFT
 #include <stdint.h>
-#define FIXED_POINT 16
+//#define FIXED_POINT 16
 #include ".\KissFFT\kiss_fftr.h"
 #endif
 #define EnableDB
 
 #include "AudioSpectrogramDebug.cpp"
+
+#include "AudioFFTUtility.h"
+#include "AudioSpectrogramWindow.h"
+
+using namespace AudioFFTUtility;
 
 class AudioFFT
 {
@@ -57,9 +64,136 @@ public:
 
 	virtual void UpdateSpectrogram(IplImage*pImg,int* pFrqRemap,bool bIsShiftingSpectrogram = true);
 	virtual void UpdateSpectrogramFreq(IplImage*pImg,int nSampleRate,int rectX,int rectY,int rectW,int rectH,float fFreqStart,float fFreqRange,float fdBHigh,float fdBLow);
+	virtual void UpdateSpectrogramPitch(IplImage*pImg,int nSampleRate,float *pFFT2Pitch,int rectX,int rectY,int rectW,int rectH,float fFreqStart,float fFreqRange,float fdBHigh,float fdBLow);
 
-	inline float Mag2dB(float mag){return (20*log10(mag));}
+	virtual void GetFFTOutputMagnitudeByArray(float *pData);
 };
+
+void AudioFFT::GetFFTOutputMagnitudeByArray(float *pData)
+{
+	int nHalfFFT = m_nFFT/2+1;
+	for (int f=0;f<nHalfFFT;f++)
+	{
+		*pData = GetFFTOutputMagnitude(f);
+		pData++;
+	}
+}
+
+void AudioFFT::UpdateSpectrogramPitch(IplImage*pImg,int nSampleRate,float *pFFT2Pitch,int rectX,int rectY,int rectW,int rectH,float fFreqStart,float fFreqRange,float fdBHigh,float fdBLow)
+{
+	const int ciStringMinPx = 50;
+	float fFreqGap = ((float)nSampleRate)/m_nFFT;
+	float fPitchStart,fPitchRange;
+	int iMag[2];
+	iMag[0] = floor(fFreqStart/fFreqGap);
+	iMag[1] = ceil((fFreqStart+fFreqRange)/fFreqGap);
+	
+	if (iMag[0]<0) iMag[0] = 0;
+	while (pFFT2Pitch[ iMag[0] ]<0) iMag[0]++;
+	
+	if (iMag[1]>=m_nFFT/2+1) iMag[1] = m_nFFT/2;
+
+	fPitchStart = pFFT2Pitch[ iMag[0] ];
+	fPitchRange = pFFT2Pitch[ iMag[1] ] - fPitchStart;
+	
+	if (rectX+rectW>pImg->width) rectX = pImg->width-rectW;
+	if (rectX<0)
+	{
+		rectX = 0;
+		rectW = pImg->width;
+	}
+
+	if (rectY+rectH>pImg->height) rectY = pImg->height-rectH;
+	if (rectY<0)
+	{
+		rectY = 0;
+		rectH = pImg->height;
+	}
+
+	const char ccNotes[] = {'C','D','E','F','G','A','B'};
+	const char ccCents[] = {   2 , 2 , 1 , 2 , 2 , 2 , 1 };
+
+	cvSetZero(pImg);
+
+	float fVSum,fVAvgPre;
+	float fVCount;
+	int iImgPosPre,iImgPosCur,iImgPosNext;
+	float fVCur,fVNext;
+	//float fMagGap = ((float)rectW)/(iMag[1]-iMag[0]+1);
+	//float fV,fVPre,fVBase;
+	//fVBase = GetFFTOutputMagnitude(0);
+	//fVPre = Mag2dB(GetFFTOutputMagnitude(iMag[0]));
+	char buffer[64];
+	for (int p=0,c=-1;p<fPitchStart+fPitchRange;p+=ccCents[c])
+	{
+		c=(c+1)%7;
+		if (p<fPitchStart) continue;
+		iImgPosCur = ((float)p - fPitchStart)/fPitchRange*rectW;
+		cvLine(pImg,cvPoint(rectX+iImgPosCur,rectY),cvPoint(rectX+iImgPosCur,rectY+rectH),(c==0)?CV_RGB(255,255,255):CV_RGB(128,128,128));
+		if (c==0)
+		{
+			sprintf_s(buffer,64,"C%d",p/12-1);
+			cvPutText(pImg,buffer,cvPoint(rectX+iImgPosCur,rectY+rectH+20),&cvFont(1,1),CV_RGB(255,255,255));
+		}
+
+		//printf("%d[%d],",p,iImgPosCur);
+	}
+
+	//printf("\n\n");
+	fVSum = fVCount = 0;
+	iImgPosNext = 0;
+	fVNext = (GetFFTOutputMagnitude(iMag[0]));
+	fVNext = fVNext>=0.0001? MAX(Mag2dB(fVNext),fdBLow) : fdBLow;
+	
+	fVAvgPre = 0;
+	iImgPosPre = -1;
+
+	for (int i=iMag[0];i<iMag[1];i++)
+	{
+		iImgPosCur = iImgPosNext;
+		fVCur = fVNext;
+		iImgPosNext = (pFFT2Pitch[ i+1 ] - fPitchStart)/fPitchRange*rectW; 
+		fVNext = (GetFFTOutputMagnitude(i+1));
+		fVNext = fVNext>=0.0001? MAX(Mag2dB(fVNext),fdBLow) : fdBLow;
+
+		if (fVCur != fdBLow || fVNext != fdBLow)
+			cvLine(pImg,cvPoint(rectX+iImgPosCur,rectY+((fVCur-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+iImgPosNext,rectY+(fVNext-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(0,255,0));
+	}
+
+	//for (int i=iMag[0];i<iMag[1];i++)
+	//{
+	//	iImgPosCur = iImgPosNext;
+	//	fVCur = fVNext;
+	//	iImgPosNext = (pFFT2Pitch[ i+1 ] - fPitchStart)/fPitchRange*rectW; 
+	//	fVNext = Mag2dB(GetFFTOutputMagnitude(i+1));
+	//	fVNext = fVNext>=0.0001? Mag2dB(fVNext) : fdBLow;
+
+	//	fVSum += fVCur;
+	//	fVCount ++;
+
+	//	if (iImgPosCur != iImgPosNext || i+1 == iMag[1])
+	//	{
+	//		if (iImgPosPre>=0)
+	//		{
+	//			if (iImgPosCur == iImgPosNext)
+	//			{
+	//				fVSum += fVNext;
+	//				fVCount ++;
+	//			}
+	//			else if (i+1 == iMag[1])
+	//				cvLine(pImg,cvPoint(rectX+iImgPosCur,rectY+((fVSum/fVCount-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+iImgPosNext,rectY+(fVNext-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(0,255,0));
+	//			cvLine(pImg,cvPoint(rectX+iImgPosPre,rectY+((fVAvgPre-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+iImgPosCur,rectY+(fVSum/fVCount-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(0,255,0));
+	//		}
+	//		iImgPosPre = iImgPosCur;
+	//		fVAvgPre = fVSum/fVCount;
+	//	}
+	//}
+	
+	cvNamedWindow(GetFFTName());
+	cvShowImage(GetFFTName(),pImg);
+	
+
+}
 
 
 void AudioFFT::UpdateSpectrogramFreq(IplImage*pImg,int nSampleRate,int rectX,int rectY,int rectW,int rectH,float fFreqStart,float fFreqRange,float fdBHigh,float fdBLow)
@@ -104,6 +238,8 @@ void AudioFFT::UpdateSpectrogramFreq(IplImage*pImg,int nSampleRate,int rectX,int
 		cvPutText(pImg,buffer,cvPoint(w,rectY+rectH+20),&cvFont(1,1),CV_RGB(255,255,255));
 		//printf("%s[%.2f] ",buffer,f);
 	}
+
+	cvLine(pImg,cvPoint(rectX,rectY+((0-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+rectW,rectY+(0-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(128,128,128));
 	//printf("\n");
 
 
@@ -114,13 +250,22 @@ void AudioFFT::UpdateSpectrogramFreq(IplImage*pImg,int nSampleRate,int rectX,int
 	
 	for (int i=iMag[0]+1,c=1;i<=iMag[1];i++,c++)
 	{
-		fV = Mag2dB(GetFFTOutputMagnitude(i));
-		cvLine(pImg,cvPoint(rectX+(c-1)*fMagGap,rectY+((fVPre-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+c*fMagGap,rectY+(fV-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(0,255,0));
+		fV = GetFFTOutputMagnitude(i);
+		if (fV>=0.00001)
+		{
+			fV = Mag2dB(fV);
+			cvLine(pImg,cvPoint(rectX+(c-1)*fMagGap,rectY+((fVPre-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+c*fMagGap,rectY+(fV-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(0,255,0));
+		}
+		else
+		{
+			fV = fdBLow;
+		cvLine(pImg,cvPoint(rectX+(c-1)*fMagGap,rectY+((fVPre-fdBHigh)/(fdBLow-fdBHigh))*rectH),cvPoint(rectX+c*fMagGap,rectY+(fV-fdBHigh)/(fdBLow-fdBHigh)*rectH),CV_RGB(255,0,0));
+		}
 		fVPre = fV;
 	}
 	
-	cvNamedWindow("Debug");
-	cvShowImage("Debug",pImg);
+	cvNamedWindow(GetFFTName());
+	cvShowImage(GetFFTName(),pImg);
 	
 
 }
@@ -574,6 +719,22 @@ public:
 
 	void ShowDebugInfo();
 
+	inline float scale16(kiss_fft_scalar val)
+	{
+		if( val < 0 )
+			return val * ( 1 / 32768.0f );
+		else
+			return val * ( 1 / 32767.0f );
+	}
+
+	inline float scale32(kiss_fft_scalar val)
+	{
+		if( val < 0 )
+			return val * ( 1 / 2147483648.0f );
+		else
+			return val * ( 1 / 2147483647.0f );
+	}
+
 private:
 	kiss_fftr_cfg config_forward;
 	kiss_fftr_cfg config_inverse;
@@ -653,7 +814,13 @@ inline void AudioKissFFT::GenFFTForward32f(int nNewData,int nChannels,float* pRa
 		}
 		value/=nChannels;
 		value = pRawData[i*nChannels+0];
+#ifdef FIXED_POINT
+	#if (FIXED_POINT == 16)
 		value *= 32767;
+	#else 
+		value *= 2147483648.0;
+	#endif
+#endif
 		samples[nOldData+i] = value;
 
 		if (m_fRawMaxCur<abs(value))
@@ -713,7 +880,13 @@ inline void AudioKissFFT::GenFFTForward32i(int nNewData,int nChannels,int* pRawD
 		}
 		value/=nChannels;
 		value = (double)(_swap32(pRawData[i*nChannels+0]) * conv);
+#ifdef FIXED_POINT
+	#if (FIXED_POINT == 16)
 		value *= 32767;
+	#else 
+		value *= 2147483648.0;
+	#endif
+#endif
 		samples[nOldData+i] = value;
 
 		if (m_fRawMaxCur<abs(value))
@@ -729,8 +902,8 @@ inline void AudioKissFFT::GenFFTForward32i(int nNewData,int nChannels,int* pRawD
 inline void AudioKissFFT::GenFFTForward16(int nNewData,int nChannels,short* pRawData)
 {
 	int nOldData;
-	int value;
-	//const double conv = 1.0 / 32768.0;
+	double value;
+	const double conv = 1.0 / 32768.0;
 
 	GenFFTInputBufferShift(nNewData);
 	m_fRawMaxCur = 0;
@@ -741,10 +914,20 @@ inline void AudioKissFFT::GenFFTForward16(int nNewData,int nChannels,short* pRaw
 		value = 0;
 		for (int c = 0; c < nChannels; c ++ )
 		{
-			value += _swap16(pRawData[i*nChannels+c]);
+			value += //_swap16(pRawData[i*nChannels+c]);
+			(double)(_swap16(pRawData[i*nChannels+c]) * conv);
 		}
 		value/=nChannels;
-		value = _swap16(pRawData[i*nChannels+0]);
+		value = //_swap16(pRawData[i*nChannels+0]);
+			(double)(_swap16(pRawData[i*nChannels+0]) * conv);
+
+#ifdef FIXED_POINT
+	#if (FIXED_POINT == 16)
+		value *= 32767;
+	#else 
+		value *= 2147483648.0;
+	#endif
+#endif
 		samples[nOldData+i] = value;
 					
 		if (m_fRawMaxCur<abs(value))
@@ -802,7 +985,23 @@ inline int AudioKissFFT::GetFFTInputBufferSize()
 inline float AudioKissFFT::GetFFTOutputMagnitude(int ifft)
 {
 	assert(ifft>=0 && ifft<m_nFFT/2+1);
-	return sqrt(spectrum[ifft].r*spectrum[ifft].r + spectrum[ifft].i*spectrum[ifft].i);
+	float re,im;
+
+#ifdef FIXED_POINT
+	#if (FIXED_POINT == 16)
+		re = scale16(spectrum[ifft].r)*m_nFFT;
+		im = scale16(spectrum[ifft].i)*m_nFFT;
+	#else 
+		re = scale32(spectrum[ifft].r)*m_nFFT;
+		im = scale32(spectrum[ifft].i)*m_nFFT;
+	#endif
+#else
+	re = spectrum[ifft].r;//)*m_nFFT;
+	im = spectrum[ifft].i;//)*m_nFFT;
+#endif
+
+
+	return sqrt(re*re + im*im);
 }
 
 inline void AudioKissFFT::GenFFTForward(int nNewData)
@@ -860,11 +1059,12 @@ AudioSpectrogram::AudioSpectrogram(int nFFT,AudioBuffer *pBuffer,int width,int h
 
 	m_iFrqImgCounter = 0;
 	m_fOverlapRatio = 0.1;
+	m_pfFFT2Pitch = NULL;
 	m_piFrqRemap = NULL;
 	m_pRawDataBuffer.p64 = NULL;
 	m_bIsShiftingSpectrogram = true;
 #ifdef EnableDB
-	GenFrqRemap(nFFT/2+1,height,true);
+	GenFrqRemap(nFFT/2+1,height,false);
 #else
 	GenFrqRemap(nFFT/2+1,height,false);
 #endif
@@ -874,6 +1074,8 @@ AudioSpectrogram::AudioSpectrogram(int nFFT,AudioBuffer *pBuffer,int width,int h
         printf("hGlobalCloseEvent failed: last error is %u\n", GetLastError());
         //return -__LINE__;
     }
+
+	m_pFFTWindow = new AudioSpectrogramWindow(width,height,LayeredWindowBase::LayeredWindow_TechType_D2DtoWIC);
 }
 
 
@@ -886,12 +1088,29 @@ AudioSpectrogram::~AudioSpectrogram()
 		cvReleaseImage(&m_vFFT[i].pFrqImg);
 	}
 
+	if (m_pfFFT2Pitch)
+		delete [] m_pfFFT2Pitch;
 	if (m_piFrqRemap)
 		delete [] m_piFrqRemap;
 	if (m_pRawDataBuffer.p64)
 		delete [] m_pRawDataBuffer.p64;
+
+	delete m_pFFTWindow;
 }
 
+void AudioSpectrogram::GenFFT2Pitch(int nFFT,int nSamplePerSec)
+{
+	int nHalfFFT = nFFT/2+1;
+	float fFreqGap = ((float)nSamplePerSec)/nFFT;
+
+	if (m_pfFFT2Pitch)
+		delete [] m_pfFFT2Pitch;
+
+	m_pfFFT2Pitch = new float[nHalfFFT];
+	m_pfFFT2Pitch[0] = Freq2Pitch(0.0001);
+	for (int i=1;i<nHalfFFT;i++)
+		m_pfFFT2Pitch[i] = Freq2Pitch(i*fFreqGap);	
+}
 
 DWORD WINAPI AudioSpectrogram::AudioSpectrogramThreadFunction(LPVOID pContext)
 {
@@ -902,11 +1121,11 @@ DWORD WINAPI AudioSpectrogram::AudioSpectrogramThreadFunction(LPVOID pContext)
 	int nDataSizeInBytes,nDataSizeInInt64,nElems,nDataBlockAlign;
 	
 
-	for (unsigned int i=0;i<pSpec->m_vFFT.size();i++)
-	{
-		cvNamedWindow(pSpec->m_vFFT[i].pFFT->GetFFTName());
-		cvShowImage(pSpec->m_vFFT[i].pFFT->GetFFTName(),pSpec->m_vFFT[i].pFrqImg);
-	}
+	//for (unsigned int i=0;i<pSpec->m_vFFT.size();i++)
+	//{
+	//	cvNamedWindow(pSpec->m_vFFT[i].pFFT->GetFFTName());
+	//	cvShowImage(pSpec->m_vFFT[i].pFFT->GetFFTName(),pSpec->m_vFFT[i].pFrqImg);
+	//}
 	
 	nElems = pSpec->m_nFFT;
 	nDataBlockAlign = pSpec->m_pBuffer->m_nBlockAlign;
@@ -914,13 +1133,15 @@ DWORD WINAPI AudioSpectrogram::AudioSpectrogramThreadFunction(LPVOID pContext)
 	nDataSizeInInt64 = nDataSizeInBytes/sizeof(INT64)+1;
 	pSpec->m_pRawDataBuffer.p64 = new INT64[nDataSizeInInt64];
 
+	pSpec->GenFFT2Pitch(pSpec->m_nFFT,pSpec->m_pBuffer->m_nSamplesPerSec);
+
 	pSpec->m_pBuffer->GetBufferFront(pSpec->m_pRawDataBuffer.p8,nDataSizeInBytes);
 
 	int nNewDataInByte,nGotDataInByte;
 	int nOldElems;
 	int nNewElems;
 	int key;
-	while ((key=cvWaitKey(10))!=27)
+	while ((key=cvWaitKey(10))!=27 && pSpec->m_pFFTWindow->CheckWindowState())
 	{
 		if (pSpec->m_pBuffer->m_nBlockAlign != nDataBlockAlign)
 		{
@@ -997,8 +1218,18 @@ DWORD WINAPI AudioSpectrogram::AudioSpectrogramThreadFunction(LPVOID pContext)
 				//pSpec->m_pBuffer->ClearNewData();
 			//if (key == ' ')
 				//pSpec->m_vFFT[i].pFFT->ShowDebugInfo();
-			pSpec->m_vFFT[i].pFFT->UpdateSpectrogram(pSpec->m_vFFT[i].pFrqImg,pSpec->m_piFrqRemap);
-			//pSpec->m_vFFT[i].pFFT->UpdateSpectrogram(pSpec->m_vFFT[i].pFrqImg,pSpec->m_pBuffer->m_nSamplesPerSec,30,30,pSpec->m_vFFT[i].pFrqImg->width-60,pSpec->m_vFFT[i].pFrqImg->height-60,0,3000,40,-40);
+			//pSpec->m_vFFT[i].pFFT->UpdateSpectrogram(pSpec->m_vFFT[i].pFrqImg,pSpec->m_piFrqRemap);
+			//pSpec->m_vFFT[i].pFFT->UpdateSpectrogramFreq(pSpec->m_vFFT[i].pFrqImg,pSpec->m_pBuffer->m_nSamplesPerSec,30,30,pSpec->m_vFFT[i].pFrqImg->width-60,pSpec->m_vFFT[i].pFrqImg->height-60,0,3000,60,-40);
+			//pSpec->m_vFFT[i].pFFT->UpdateSpectrogramPitch(
+			//	pSpec->m_vFFT[i].pFrqImg,pSpec->m_pBuffer->m_nSamplesPerSec,pSpec->m_pfFFT2Pitch,
+			//	30,30,pSpec->m_vFFT[i].pFrqImg->width-60,pSpec->m_vFFT[i].pFrqImg->height-60,AudioFFTUtility::cfNoteCFreq[0],AudioFFTUtility::cfNoteCFreq[10]-AudioFFTUtility::cfNoteCFreq[0],60,-40);
+
+			float* pData = pSpec->m_pFFTWindow->LockFFTBuffer(pSpec->m_nFFT,pSpec->m_pBuffer->m_nSamplesPerSec);
+			if (pData)
+				pSpec->m_vFFT[i].pFFT->GetFFTOutputMagnitudeByArray(pData);
+			pSpec->m_pFFTWindow->UnlockFFTBuffer();
+			pSpec->m_pFFTWindow->Repaint();
+
 
 		}
 

@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include <stdint.h>
-#define FIXED_POINT 16
+//#define FIXED_POINT 16
 
 #ifdef __cplusplus
 extern "C" {
