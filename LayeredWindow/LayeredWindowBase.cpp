@@ -438,6 +438,8 @@ LRESULT LayeredWindowBase::WndProc(HWND hWnd,UINT uMsg, WPARAM wParam, LPARAM lP
 	return DefWindowProc(hWnd,uMsg,wParam,lParam);
 }
 
+#include <locale.h>
+
 DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 {
 	LayeredWindowBase* pWindow = reinterpret_cast<LayeredWindowBase*>(pParam );
@@ -449,6 +451,7 @@ DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 	if (!SUCCEEDED(hr))
 		return 0;
 
+	::setlocale(LC_ALL, "cht"); 
 
 	switch (pWindow->m_techType)
 	{
@@ -480,7 +483,7 @@ DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 	wcex.cbClsExtra      = 0;
 	wcex.cbWndExtra      = 8; // 8 bytes, to allow for 64-bit architecture
 	wcex.hInstance       = NULL; // CHECK
-	wcex.hIcon           = NULL;
+	wcex.hIcon           = (HICON)LoadImageW(NULL, _T("sysAudioSpectrogram_icon.ico"), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE|LR_LOADFROMFILE);
 	wcex.hCursor         = ::LoadCursor(NULL, IDC_ARROW);
 	wcex.hbrBackground   = (HBRUSH)NULL_BRUSH; // CHECK
 	wcex.lpszMenuName    = NULL;
@@ -491,7 +494,7 @@ DWORD WINAPI LayeredWindowBase::StartMsgThread( void* pParam )
 
 
 	//CreateWindow
-	pWindow->m_hWnd = ::CreateWindowEx( WS_EX_LAYERED, _T("LayeredWindowBaseClass"), _T("LayeredWindow"), WS_POPUP, 
+	pWindow->m_hWnd = ::CreateWindowEx( WS_EX_LAYERED | WS_EX_TOPMOST, _T("LayeredWindowBaseClass"), _T("LayeredWindow"), WS_POPUP, 
 		pWindow->m_info.m_windowPosition.x, pWindow->m_info.m_windowPosition.y,
 		pWindow->m_info.m_size.cx, pWindow->m_info.m_size.cy, NULL, NULL, NULL, pWindow ); 
 

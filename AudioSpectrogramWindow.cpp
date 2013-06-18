@@ -25,8 +25,8 @@ AudioSpectrogramWindow::AudioSpectrogramWindow(int width,int height,LayeredWindo
 
 	m_fFFTFreqMax = m_fFFTFreqMin = -1;
 
-	m_fdBMax = 60;
-	m_fdBMin = -40;
+	m_fdBMax = 50;
+	m_fdBMin = -30;
 	m_isNewData = false;
 
 	m_isMouseMDown = false;
@@ -127,6 +127,8 @@ bool AudioSpectrogramWindow::Initialize()
 	m_pWin.pD2D->m_pD2DFactory->GetDesktopDpi(&m_fDPIScaleX,&m_fDPIScaleY);
 	m_fDPIScaleX /= 96.0f;
     m_fDPIScaleY /= 96.0f;
+
+	//SetWindowPos(m_hWnd,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOREPOSITION|SWP_NOSIZE|SWP_SHOWWINDOW);
 
 	return true;
 }
@@ -423,7 +425,7 @@ void AudioSpectrogramWindow::Render()
 			else if (note == 2 || note == 4 || note ==  5 || note == 7 || note == 9 || note == 11)
 			{
 				//m_pWin.pD2D->m_pRenderTarget->DrawLine(point0,point1,m_pBrushBlackAlpha,3);
-				m_pWin.pD2D->m_pRenderTarget->DrawLine(point0,point1,m_pBrushWhite,1);
+				m_pWin.pD2D->m_pRenderTarget->DrawLine(point0,point1,m_pBrushWhite,0.5);
 			}
 			else
 				m_pWin.pD2D->m_pRenderTarget->DrawLine(point0,point1,m_pBrushBlackAlpha,1);
